@@ -329,6 +329,9 @@ assertEquals((1 << 20) + 1,
 // A sibling alternative must match at the original position, not at a
 // leaked extent: the grant is revoked on any backtrack retarget.
 check(/[ab]*c|/, "abx", [""], 0);
+// Unrolling %{1} enables masked dispatch; the parked loop must not skip B.
+check(/%{1}~|9()|B|%*^>/, "a%B9", ["B", undefined], 2);
+check(/%{1}~|9()|B|%*^>/, "a%B", ["B", undefined], 2);
 check(/\w*\b=|/, "ab!", [""], 0);
 check(/[ab]+c|/, "abx", [""], 0);
 
@@ -385,6 +388,19 @@ assertEquals(["ab=", "cd="], "ab= cd=".match(/\w*\b=/g));
 // Captures across parked give-ups.
 check(/(\w+)\b=(\d)/, "ab cd=7", ["cd=7", "cd", "7"], 3);
 
+// Later starts reach the same loop extent with a different capture. A failed
+// backreference at the first start must not skip a successful later start.
+check(/(?<g0>A+9)\k<g0>/, "AA9A9", ["A9A9", "A9"], 1);
+check(/(A*9)\1/, "AA9A9", ["A9A9", "A9"], 1);
+check(/(A+)9\1/, "AA9A", ["A9A", "A"], 1);
+check(/(?<g0>A+9)\k<g0>/iu, "AA9a9", ["A9a9", "A9"], 1);
+check(/(?<g0>A+9)\k<g0>/, "\u0100AA9A9", ["A9A9", "A9"], 2);
+
+// Unreferenced captures and captures written after the loop retain their
+// existing drain reductions.
+check(/(A+)9/, "AAA!AA9", ["AA9", "AA"], 4);
+check(/A+(9)\1/, "AAA!AA99", ["AA99", "9"], 4);
+
 // A parked give-up can land exactly at the subject end (impossible for
 // AT_END shapes); the search-retry re-entry must bounds-check its reload.
 check(/\w+\b=/, "dddd", null);
@@ -401,6 +417,7 @@ check(/\w*\b$/, "", null);
 // would time out at O(n^2).
 const run = "a".repeat(1 << 20);
 check(/[a-z]+0/, run + "!", null);
+check(/a+(9)\1/, run + "!", null);
 check(/\w+\b=/, run + "!", null);
 check(/\w*\b=/, run + "!", null);
 assertEquals((1 << 20) + 1, /[a-z]*0/.exec(run + "0")[0].length);
@@ -494,11 +511,19 @@ check(/(x)[ab]*\1/, "xabx", ["xabx", "x"], 0);
 check(/(a)\1+$/, "baaa", ["aaa", "a"], 1);
 check(/(.)[bc]*\1/, "abca", ["abca", "a"], 0);
 
-// Group modifiers: MODIFY_FLAGS changes what the body matches; the analysis
-// must use the loop's own flag context.
+// Group modifiers: each node carries its own flags; the analysis
+// must use each node's own flag context (both in the loop body and the
+// continuation).
 check(/(?i:[k])+$/u, "kK", ["kK"], 0);
 check(/(?i:a+)$/, "aA", ["aA"], 0);
 check(/x(?i:[ab]+)c/, "xaBc", ["xaBc"], 0);
+check(/(?-i:a+)A/i, "aaa", ["aaa"], 0);
+check(/(?-i:[a]+)A/i, "aaa", ["aaa"], 0);
+check(/(?:(?i:A))+a/, "aaa", ["aaa"], 0);
+check(/(?i:a)a*$/, "aA", ["A"], 1);
+check(/(?i:K)K*$/, "Kk", ["k"], 1);
+check(/(?i:K)K*\b/, "Kk", ["k"], 1);
+check(/(?i:a)[a]*$/, "aA", ["A"], 1);
 
 // Guarded alternatives (from interval quantifiers) keep the full drain.
 check(/(?:a{1,4})*b/, "aaab", ["aaab"], 0);

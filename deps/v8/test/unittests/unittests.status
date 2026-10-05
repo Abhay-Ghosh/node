@@ -33,6 +33,7 @@
   'Mutex.SharedMutexThreadsFuzz': [PASS, SLOW],
   'ParsingTest.ObjectRestNegativeTestSlow': [PASS, ['mode == debug', SKIP]],
   'SignalAndMutexTest.SignalsPlusSharedMutexes': [PASS, SLOW],
+  'TestWithHeapInternals.TestInternalWeakLists': [PASS, SLOW],
 
   # Tests that need to run sequentially (e.g. due to memory consumption).
   'LogAllTest.LogAll': [PASS, SLOW, HEAVY],
@@ -44,6 +45,16 @@
   # Those smoke tests fail nondeterministically to test fuzzer infrastructure.
   # We cannot run them in unittest mode as they would produce flakes.
   'SmokeTest.*': [SKIP],
+
+  ##############################################################################
+  # Behavioural differences between Maglev and Turbofan when the former is used
+  # for OptimizeFunctionOnNextCall.
+  #
+  # Maglev doesn't support compiler::NodeObserver machinery.
+  'SloppyEqualityTest.SloppyEqualityTest': [SKIP],
+   # RunDeoptTest checks frame->is_turbofan().
+  'RunDeoptTest.DeoptSimple': [SKIP],
+  'RunDeoptTest.DeoptSimpleInExpr': [SKIP],
 }],  # ALWAYS
 
 ##############################################################################
@@ -129,11 +140,22 @@
   'AllGolden/BytecodeGeneratorTest.CompilationMatchesExpectation/WideRegisters': [SKIP],
 }],  # arch == ppc64
 
+['arch == arm64', {
+  # BUG(v8:3154).
+  'HeapTest.ReleaseOverReservedPages': [PASS, FAIL],
+}],  # arch == arm64
+
 ##############################################################################
-['arch == mips64el', {
+['arch == mips64el or arch == mips64', {
   # TODO(mips-team): mips64 do not allocate odd register in liftoff.
   'WasmRegisterTest.SpreadSetBitsToAdjacentFpRegs': [SKIP],
-}],  # 'arch == mips64'
+
+  # BUG(v8:3154).
+  'HeapTest.ReleaseOverReservedPages': [PASS, FAIL],
+
+  # TODO(mips-team): Improve code-size on large RegExp's.
+  'HeapTest.TestSizeOfRegExpCode': [SKIP],
+}],  # 'arch == mips64el or arch == mips64'
 
 ##############################################################################
 ['system == windows and asan', {
@@ -170,6 +192,14 @@
 
   # These tests need a lot of memory on TSan.
   'ModuleGenerationTest.*': [PASS, HEAVY],
+
+  # Slow tests on TSAN.
+  'HeapTest.Regress8014': [SKIP],
+
+  # BUG(v8:8296). The tests allocate a lot of objects and timeout in
+  # the --stress-concurrent-allocation variant.
+  'TestWithPlatform.OutOfMemorySmallObjects': [PASS, NO_VARIANTS],
+  'TestWithPlatform.OutOfMemory': [PASS, NO_VARIANTS],
 }],  # tsan == True
 
 ##############################################################################
@@ -227,6 +257,9 @@
   'LogInterpretedFramesNativeStackWithSerializationTest.LogInterpretedFramesNativeStackWithSerialization': [SKIP],
   'InterpreterTest.InterpreterWithNativeStack': [SKIP],
 
+  # https://crbug.com/v8/7777
+  'HeapTest.OptimizeAfterBytecodeFlushingCandidate': [SKIP],
+
   # Crashes on native arm.
   'MacroAssemblerTest.ExtractLane': [PASS, ['arch == arm and not simulator_run', SKIP]],
   'MacroAssemblerTest.ReplaceLane': [PASS, ['arch == arm and not simulator_run', SKIP]],
@@ -236,6 +269,7 @@
 ['has_jitless', {
   # Feedback collection maintenance is (mostly) disabled.
   'FeedbackVectorTest.Vector*': [SKIP],
+  'HeapTest.IncrementalMarkingPreservesMonomorphicCallIC': [SKIP],
   'InterpreterTest.InterpreterBigIntComparisons': [SKIP],
   'InterpreterTest.InterpreterBinaryOpSmiTypeFeedback': [SKIP],
   'InterpreterTest.InterpreterUnaryOpFeedback': [SKIP],
@@ -259,11 +293,18 @@
 
 ##############################################################################
 ['lite_mode or variant == jitless', {
+  # Slow tests.
+  'HeapTest.IncrementalMarkingStepMakesBigProgressWithLargeObjects': [SKIP],
 
   # Tests that generate code at runtime.
   'Assembler*': [SKIP],
   'SyncPrimitivesArmTest*': [SKIP],
   'CodePagesTest.*': [SKIP],
+  'HeapTest.CodeLargeObjectSpace': [SKIP],
+  'TestWithPlatform.CodeLargeObjectSpace64k': [SKIP],
+  'HeapTest.CodeObjectRegistry': [SKIP],
+  'HeapTest.FindCodeForInnerPointer': [SKIP],
+  'HeapTest.Regress10900': [SKIP],
   'MacroAssemblerX64Test.EmbeddedObj': [SKIP],
   'RegExpTest.AssertionMergingToNode': [SKIP],
   'RegExpTest.MacroAssemblernativeAtStart': [SKIP],
@@ -341,14 +382,6 @@
 }],  # 'official_build'
 
 ##############################################################################
-# Behavioural differences between Maglev and Turbofan when the former is used
-# for OptimizeFunctionOnNextCall.
-['variant in (stress_maglev, stress_maglev_non_eager_inlining, stress_maglev_future, stress_maglev_no_turbofan, maglev_no_turbofan)', {
-  # Maglev doesn't support compiler::NodeObserver machinery.
-  'SloppyEqualityTest.SloppyEqualityTest': [FAIL],
-}],  # variant in (stress_maglev, stress_maglev_non_eager_inlining, stress_maglev_future, stress_maglev_no_turbofan, maglev_no_turbofan)
-
-##############################################################################
 ['system == windows', {
   # Bug: crbug.com/v8/14320
   'TimeTicks.NowResolution': [PASS,FAIL],
@@ -363,9 +396,36 @@
   'LogTimerTest.ConsoleTimeEvents': [SKIP],
 }],  # 'system == android'
 
+['variant == stress_concurrent_inlining', {
+  # crbug.com/v8/11513: Flakily failing due to the additional compile task.
+  'HeapTest.CellsInOptimizedCodeAreWeak': [PASS, FAIL],
+  'HeapTest.EnsureAllocationSiteDependentCodesProcessed': [PASS, FAIL],
+  'TestWithHeapInternals.LeakNativeContextVia*': [PASS, FAIL],
+  'HeapTest.NewSpaceObjectsInOptimizedCode': [PASS, FAIL],
+  'HeapTest.ObjectsInEagerlyDeoptimizedCodeAreWeak': [PASS, FAIL],
+  'HeapTest.ObjectsInOptimizedCodeAreWeak': [PASS, FAIL],
+}],  # variant == stress_concurrent_inlining
+
+['variant == assert_types', {
+  # Type assertions add strong pointers, breaking these tests.
+  'HeapTest.ObjectsInOptimizedCodeAreWeak': [SKIP],
+  'HeapTest.ObjectsInEagerlyDeoptimizedCodeAreWeak': [SKIP],
+  'HeapTest.NewSpaceObjectsInOptimizedCode': [SKIP],
+  'TestWithHeapInternals.LeakNativeContextViaMapKeyed': [SKIP],
+  'HeapTest.CellsInOptimizedCodeAreWeak': [SKIP],
+}],  # variant == assert_types
+
+['clang_coverage', {
+  # Slow tests.
+  'TestWithPlatform.OutOfMemory': [PASS, SLOW],
+  'TestWithPlatform.OutOfMemoryIneffectiveGC': [PASS, SLOW],
+}],  # 'clang_coverage'
+
 ['clang_coverage and mode == debug', {
   # Too slow tests.
   'LogAllTest.LogAll': [SKIP],
+  'HeapTest.Regress8014': [SKIP],
+  'TestWithHeapInternals.TestInternalWeakLists': [SKIP],
 }],  # 'clang_coverage and mode == debug'
 
 ['device_type == bullhead', {
@@ -404,6 +464,8 @@
 ['full_debug', {
   # Tests too slow in non-optimized debug mode.
   'LogAllTest.LogAll': [SKIP],
+  'HeapTest.Regress8014': [SKIP],
+  'TestWithHeapInternals.TestInternalWeakLists': [SKIP],
 }],  # 'full_debug'
 
 ##############################################################################

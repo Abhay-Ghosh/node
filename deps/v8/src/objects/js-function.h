@@ -24,6 +24,8 @@ class Tuple2;
 // It doesn't carry any functionality but allows function classes to be
 // identified in the type system.
 V8_OBJECT class JSFunctionOrBoundFunctionOrWrappedFunction : public JSObject {
+  V8_IT_ABSTRACT;
+
  public:
   static const int kLengthDescriptorIndex = 0;
   static const int kNameDescriptorIndex = 1;
@@ -54,8 +56,8 @@ V8_OBJECT class JSBoundFunction
   inline void set_bound_target_function(
       Tagged<JSCallable> value, WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
-  inline Tagged<Object> bound_this() const;
-  inline void set_bound_this(Tagged<Object> value,
+  inline Tagged<UnionOf<JSAny, SourceTextModule>> bound_this() const;
+  inline void set_bound_this(Tagged<UnionOf<JSAny, SourceTextModule>> value,
                              WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
   inline Tagged<FixedArray> bound_arguments() const;
@@ -75,7 +77,7 @@ V8_OBJECT class JSBoundFunction
 
  public:
   TaggedMember<JSCallable> bound_target_function_;
-  TaggedMember<Object> bound_this_;
+  TaggedMember<UnionOf<JSAny, SourceTextModule>> bound_this_;
   TaggedMember<FixedArray> bound_arguments_;
 } V8_OBJECT_END;
 
@@ -127,6 +129,8 @@ enum class BudgetModification { kReduce, kRaise, kReset };
 // prototype. Respective subclass defines the layout of the object in memory
 // but all the JSFunction related logic lives in this class.
 V8_OBJECT class JSFunction : public JSFunctionOrBoundFunctionOrWrappedFunction {
+  V8_IT_ABSTRACT;
+
  public:
   DECL_RELEASE_ACQUIRE_ACCESSORS(
       prototype_or_initial_map,
@@ -253,7 +257,6 @@ V8_OBJECT class JSFunction : public JSFunctionOrBoundFunctionOrWrappedFunction {
   // Tells whether function's code object checks its tiering state (some code
   // kinds, e.g. TURBOFAN, ignore the tiering state).
   inline bool ChecksTieringState(IsolateForSandbox isolate);
-
 
   // Tiering up a function happens as follows:
   // 1. RequestOptimization is called
@@ -564,6 +567,8 @@ inline constexpr int JSFunctionWithoutPrototype::kMinSize =
 
 // Defines layout of JavaScript functions with prototype.
 V8_OBJECT class JSFunctionWithPrototype : public JSFunction {
+  V8_IT_ORDER(LAST);
+
  public:
   static const int kHeaderSize;
   static const int kMinSize;
@@ -586,7 +591,8 @@ V8_OBJECT class JSFunctionWithPrototype : public JSFunction {
   DECL_VERIFIER(JSFunctionWithPrototype)
 
  public:
-  TaggedMember<Object> prototype_or_initial_map_;
+  TaggedMember<UnionOf<JSReceiver, Map, Tuple2, TheHole>>
+      prototype_or_initial_map_;
 } V8_OBJECT_END;
 
 inline constexpr int JSFunctionWithPrototype::kHeaderSize =
@@ -595,6 +601,7 @@ inline constexpr int JSFunctionWithPrototype::kMinSize =
     sizeof(JSFunctionWithPrototype);
 
 V8_OBJECT class JSClassConstructor : public JSFunctionWithPrototype {
+  V8_IT_ORDER(LAST);
 } V8_OBJECT_END;
 
 }  // namespace v8::internal

@@ -17,6 +17,7 @@
 #include "src/wasm/module-compiler.h"
 #include "src/wasm/module-instantiate.h"
 #include "src/wasm/wasm-code-pointer-table-inl.h"
+#include "src/wasm/wasm-debug.h"
 #include "src/wasm/wasm-engine.h"
 #include "src/wasm/wasm-import-wrapper-cache.h"
 #include "src/wasm/wasm-objects-inl.h"
@@ -151,10 +152,15 @@ TestingModuleBuilder::TestingModuleBuilder(
                                 WellKnownImport::kUninstantiated);
     ImportCallKind kind = resolved.kind();
     DirectHandle<JSReceiver> callable = resolved.callable();
+    int expected_arity = static_cast<int>(sig->parameter_count());
+    if (kind == ImportCallKind::kJSFunction) {
+      expected_arity = Cast<JSFunction>(callable)
+                           ->shared()
+                           ->internal_formal_parameter_count_without_receiver();
+    }
     std::shared_ptr<wasm::WasmWrapperHandle> wrapper_handle =
         GetWasmImportWrapperCache()->GetCompiled(
-            isolate,
-            {kind, sig, static_cast<int>(sig->parameter_count()), kNoSuspend});
+            isolate, {kind, sig, expected_arity, kNoSuspend});
 
     ImportedFunctionEntry(trusted_instance_data_, maybe_import_index)
         .SetWasmToWrapper(isolate_, callable, std::move(wrapper_handle),
@@ -163,6 +169,9 @@ TestingModuleBuilder::TestingModuleBuilder(
 }
 
 TestingModuleBuilder::~TestingModuleBuilder() {
+  if (native_module_->HasDebugInfo()) {
+    native_module_->GetDebugInfo()->RemoveIsolate(isolate_);
+  }
   // When the native module dies and is erased from the cache, it is expected to
   // have either valid bytes or no bytes at all.
   native_module_->SetWireBytes({});
@@ -188,6 +197,7 @@ uint8_t* TestingModuleBuilder::AddMemory(uint32_t size, SharedFlag shared,
   memory->initial_pages = initial_pages;
   memory->maximum_pages = maximum_pages;
   memory->address_type = address_type;
+  memory->is_shared = shared;
   UpdateComputedInformation(memory);
 
   // Create the WasmMemoryObject.
@@ -205,8 +215,13 @@ uint8_t* TestingModuleBuilder::AddMemory(uint32_t size, SharedFlag shared,
       TrustedFixedAddressArray::New(isolate_, 2);
   uint8_t* mem_start = reinterpret_cast<uint8_t*>(
       memory_object->backing_store()->buffer_start());
+  Address size_or_address =
+      shared.value()
+          ? reinterpret_cast<Address>(
+                memory_object->backing_store()->byte_length_address())
+          : size;
   memory_bases_and_sizes->set(0, reinterpret_cast<Address>(mem_start));
-  memory_bases_and_sizes->set(1, size);
+  memory_bases_and_sizes->set(1, size_or_address);
   trusted_instance_data_->set_memory_bases_and_sizes(*memory_bases_and_sizes);
 
   mem0_start_ = mem_start;
@@ -218,7 +233,7 @@ uint8_t* TestingModuleBuilder::AddMemory(uint32_t size, SharedFlag shared,
   // TODO(wasm): Delete the following line when test-run-wasm will use a
   // multiple of kPageSize as memory size. At the moment, the effect of these
   // two lines is used to shrink the memory for testing purposes.
-  trusted_instance_data_->SetRawMemory(0, mem0_start_, mem0_size_);
+  trusted_instance_data_->SetRawMemory(0, mem0_start_, size_or_address);
   return mem0_start_;
 }
 
@@ -266,7 +281,8 @@ uint32_t TestingModuleBuilder::AddFunction(const FunctionSig* sig,
 
 void TestingModuleBuilder::InitializeWrapperCache() {
   TypeCanonicalizer::PrepareForCanonicalTypeId(
-      isolate_, module_->MaxCanonicalTypeIndex());
+      isolate_, module_->MaxCanonicalTypeIndex(),
+      SharedFlag{module_->has_shared_part});
   DirectHandle<FixedArray> maps = isolate_->factory()->NewFixedArray(
       static_cast<int>(module_->types.size()));
   for (uint32_t index = 0; index < module_->types.size(); index++) {
@@ -481,7 +497,7 @@ DirectHandle<WasmInstanceObject> TestingModuleBuilder::InitInstanceObject() {
       isolate_->factory()->NewByteArray(kMaxGlobalsSize);
   std::fill(globals_buffer->begin(), globals_buffer->end(), 0);
   DirectHandle<WasmModuleObject> module_object =
-      WasmModuleObject::New(isolate_, native_module, script);
+      WasmModuleObject::New(isolate_, script);
   native_module_ = native_module.get();
 
   DirectHandle<WasmTrustedInstanceData> trusted_data =

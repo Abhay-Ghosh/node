@@ -83,12 +83,11 @@ struct HasProperRunMethod {
 };
 
 template <typename Phase, typename... Args>
-concept TurboshaftPhase =
-    HasProperRunMethod<Phase>::value &&
-    requires(Phase p) { p.kKind == PhaseKind::kTurboshaft; };
+concept TurboshaftPhase = HasProperRunMethod<Phase>::value &&
+                          (Phase::kKind == PhaseKind::kTurboshaft);
 
 template <typename Phase>
-concept TurbofanPhase = requires(Phase p) { p.kKind == PhaseKind::kTurbofan; };
+concept TurbofanPhase = (Phase::kKind == PhaseKind::kTurbofan);
 
 template <typename Phase>
 concept CompilerPhase = TurboshaftPhase<Phase> || TurbofanPhase<Phase>;
@@ -490,11 +489,21 @@ class V8_EXPORT_PRIVATE PipelineData {
   }
 
   void clear_wasm_revec_analyzer() { wasm_revec_analyzer_ = nullptr; }
+
+  // Percentage (0-100) of this function's SIMD128 operations combined into
+  // SIMD256. 0 means revec was not performed. Recorded to the
+  // V8.WasmRevecConversionPercent histogram after code generation.
+  int wasm_revec_percent() const { return wasm_revec_percent_; }
+  void set_wasm_revec_percent(int percent) { wasm_revec_percent_ = percent; }
 #endif  // V8_ENABLE_WASM_SIMD256_REVEC
 
   WasmShuffleAnalyzer* wasm_shuffle_analyzer() const {
     DCHECK_NOT_NULL(wasm_shuffle_analyzer_);
     return wasm_shuffle_analyzer_;
+  }
+
+  bool has_wasm_shuffle_analyzer() const {
+    return wasm_shuffle_analyzer_ != nullptr;
   }
 
   void set_wasm_shuffle_analyzer(WasmShuffleAnalyzer* wasm_shuffle_analyzer) {
@@ -614,6 +623,7 @@ class V8_EXPORT_PRIVATE PipelineData {
 #ifdef V8_ENABLE_WASM_SIMD256_REVEC
 
   WasmRevecAnalyzer* wasm_revec_analyzer_ = nullptr;
+  int wasm_revec_percent_ = 0;
 #endif  // V8_ENABLE_WASM_SIMD256_REVEC
 #endif  // V8_ENABLE_WEBASSEMBLY
 };

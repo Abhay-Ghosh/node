@@ -82,6 +82,8 @@ V8_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
 // The Name abstract class captures anything that can be used as a property
 // name, i.e., strings and symbols.  All names store a hash value.
 V8_OBJECT class Name : public PrimitiveHeapObject {
+  V8_IT_ABSTRACT;
+
  public:
   // Tells whether the hash code has been computed.
   // Note: Use TryGetHash() whenever you want to use the hash, instead of a
@@ -304,7 +306,7 @@ V8_OBJECT class Name : public PrimitiveHeapObject {
 
   inline uint32_t GetRawHashFromForwardingTable(uint32_t raw_hash) const;
 
-  std::atomic_uint32_t raw_hash_field_;
+  std::atomic_uint32_t raw_hash_field_ V8_TQ_TYPE(NameHash);
 } V8_OBJECT_END;
 
 inline bool IsUniqueName(Tagged<Name> obj);
@@ -317,8 +319,8 @@ V8_OBJECT class Symbol : public Name {
   using IsInPublicSymbolTableBit = IsWellKnownSymbolBit::Next<bool, 1>;
   using IsInterestingSymbolBit = IsInPublicSymbolTableBit::Next<bool, 1>;
 
-  inline Tagged<PrimitiveHeapObject> description() const;
-  inline void set_description(Tagged<PrimitiveHeapObject> value,
+  inline Tagged<UnionOf<String, Undefined>> description() const;
+  inline void set_description(Tagged<UnionOf<String, Undefined>> value,
                               WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
   inline void set_private_symbol_kind(PrivateSymbolKind kind);
 
@@ -380,10 +382,8 @@ V8_OBJECT class Symbol : public Name {
 
   const char* PrivateSymbolToName() const;
 
-  uint32_t flags_;
-  // String|Undefined
-  // TODO(leszeks): Introduce a union type for this.
-  TaggedMember<PrimitiveHeapObject> description_;
+  uint32_t flags_ V8_TQ_TYPE(SymbolFlags);
+  TaggedMember<UnionOf<String, Undefined>> description_;
 } V8_OBJECT_END;
 
 template <>
